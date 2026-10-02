@@ -1,0 +1,12 @@
+{
+  "name": "navidix-features-3d",
+  "private": true,
+  "description": "Navidix Studio — 15s 3D motion of the studio's features, rendered with Three.js + Web Audio.",
+  "scripts": {
+    "render": "node render.js",
+    "render:vertical": "node render.js --w 1080 --h 1920"
+  },
+  "dependencies": {
+    "three": "0.169.0"
+  }
+}
