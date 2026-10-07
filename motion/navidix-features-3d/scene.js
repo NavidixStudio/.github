@@ -632,8 +632,11 @@ const BUILD = {
 function updateStations(t) {
   stations.forEach(st => {
     const s = T.feat[st.k], u = t - s;
-    st.group.visible = t > s - .9 && t < s + 2.9;
+    // fold away as soon as the camera leaves for the next station (or for home)
+    const next = st.k < 3 ? T.feat[st.k + 1] : T.lock, away = prog(t, next + .05, next + .5);
+    st.group.visible = t > s - .9 && away < 1;
     if (!st.group.visible) return;
+    st.group.scale.setScalar(Math.max(.001, 1 - E.inCubic(away)));
     const P = st.parts;
     // headline
     P.label.material.opacity = prog(u, .22, .45);

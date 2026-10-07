@@ -4,7 +4,8 @@
  *   node render.js                         full render → out/navidix-features-3d.mp4
  *   node render.js --stills 1,3.5,5.2      single frames → out/stills/*.png
  *   node render.js --w 1080 --h 1920       vertical cut
- *   options: --fps 60 --workers 4 --out out
+ *   node render.js --only 6.5-7.7,12.1-13.3  redraw just those seconds into the existing frames, then encode
+ *   options: --fps 60 --workers 3 --out out
  *
  * Needs Playwright (Chromium) and ffmpeg on PATH.
  */
@@ -23,6 +24,7 @@ const OUT = path.resolve(opt('out', path.join(__dirname, 'out')));
 const STILLS = opt('stills', null);
 const NAME = opt('name', `navidix-features-3d${H > W ? '-vertical' : ''}`);
 const REUSE = args.includes('--reuse-frames');   // re-mix audio / re-encode without redrawing
+const ONLY = opt('only', null);                   // "a-b,c-d" seconds: redraw just these frames into the existing frame folder
 
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.woff2': 'font/woff2', '.png': 'image/png', '.jpg': 'image/jpeg' };
 function serve() {
@@ -86,7 +88,7 @@ async function master(wav, out) {
     }
     const frames = Math.round(15 * FPS);
     const fdir = path.join(OUT, `frames-${W}x${H}`);
-    if (!REUSE) fs.rmSync(fdir, { recursive: true, force: true });
+    if (!REUSE && !ONLY) fs.rmSync(fdir, { recursive: true, force: true });
     fs.mkdirSync(fdir, { recursive: true });
 
     // audio
@@ -102,14 +104,18 @@ async function master(wav, out) {
     await master(wav, mastered);
     if (args.includes('--audio-only')) return;
 
-    let next = REUSE && fs.existsSync(path.join(fdir, `f${String(frames - 1).padStart(5, '0')}.png`)) ? frames : 0, done = 0;
-    const pages = next >= frames ? [] : await Promise.all(Array.from({ length: WORKERS }, () => openPage(browser, url)));
+    let todo = [...Array(frames).keys()];
+    if (ONLY) todo = [...new Set(ONLY.split(',').flatMap(r => { const [a, b] = r.split('-').map(Number), out = []; for (let i = Math.floor(a * FPS); i <= Math.ceil(b * FPS) && i < frames; i++) out.push(i); return out; }))];
+    else if (REUSE && fs.existsSync(path.join(fdir, `f${String(frames - 1).padStart(5, '0')}.png`))) todo = [];
+    let next = 0, done = 0;
+    const pages = !todo.length ? [] : await Promise.all(Array.from({ length: WORKERS }, () => openPage(browser, url)));
     await Promise.all(pages.map(async page => {
       for (;;) {
-        const i = next++; if (i >= frames) break;
+        if (next >= todo.length) break;
+        const i = todo[next++];
         const png = await grab(page, i / FPS);
         fs.writeFileSync(path.join(fdir, `f${String(i).padStart(5, '0')}.png`), Buffer.from(png, 'base64'));
-        if (++done % 60 === 0) console.log(`frames ${done}/${frames}  ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+        if (++done % 60 === 0) console.log(`frames ${done}/${todo.length}  ${((Date.now() - t0) / 1000).toFixed(0)}s`);
       }
     }));
 
